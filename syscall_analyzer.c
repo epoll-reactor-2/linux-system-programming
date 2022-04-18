@@ -1,17 +1,22 @@
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
 #include <stdarg.h>
+#include <fcntl.h>
 
 #include <sys/ptrace.h>
 #include <sys/types.h>
 #include <sys/user.h>
 #include <sys/wait.h>
+#include <sys/uio.h>
 
 #include "syscall_analyzer.h"
 
+/* Internal context. */
 typedef struct analyzer_handle_t {
     void  *output_file_path;
     void  *output_buffer;
@@ -34,31 +39,37 @@ void *analyzer_init() {
 
 void analyzer_destroy(void *handle) {
     analyzer_handle_t *analyzer = (analyzer_handle_t *)handle;
+
+    if (analyzer->output_fd)
+        fclose(analyzer->output_fd);
+
     free(analyzer);
 }
 
+/* Setup analyzer option. Can be called multiple times.
+   Analyzer holds only last passed parameter. */
 void analyzer_setopt(void *handle, analyzer_opt_t opt, void *param) {
     analyzer_handle_t *analyzer = (analyzer_handle_t *)handle;
 
     switch (opt) {
-    case ANALYZER_OPT_OUT_BUFFER:
-        analyzer->output_buffer = param;
-        break;
+        case ANALYZER_OPT_OUT_BUFFER:
+            analyzer->output_buffer = param;
+            break;
 
-    case ANALYZER_OPT_OUT_BUFFER_SIZE:
-        analyzer->output_buffer_size = param;
-        break;
+        case ANALYZER_OPT_OUT_BUFFER_SIZE:
+            analyzer->output_buffer_size = param;
+            break;
 
-    case ANALYZER_OPT_EXECUTABLE:
-        analyzer->executable_path = param;
-        break;
+        case ANALYZER_OPT_EXECUTABLE:
+            analyzer->executable_path = param;
+            break;
 
-    case ANALYZER_OPT_OUT_FILE:
-        analyzer->output_file_path = param;
-        break;
+        case ANALYZER_OPT_OUT_FILE:
+            analyzer->output_file_path = param;
+            break;
 
-    default:
-        break;
+        default:
+            break;
     }
 }
 
@@ -89,6 +100,7 @@ static void analyzer_configure_buffer(analyzer_handle_t *analyzer) {
     analyzer->output_fd = fopen(analyzer->output_file_path, "w");
 }
 
+/* Write to specified in handle file or buffer. */
 __attribute__((format(printf, 2, 3)))
 static void analyzer_write(analyzer_handle_t *analyzer, const char *fmt, ...) {
     va_list args;
@@ -123,8 +135,11 @@ static void analyzer_fatal(const char *fmt, ...) {
     abort();
 }
 
+/* Translate syscall code to readable string. */
 static const char *syscall_to_string(long syscall);
-static void syscall_regs_to_string(analyzer_handle_t *analyzer, long syscall, struct user_regs_struct regs);
+
+/* Append syscall with its parameters to handle buffer. */
+static void syscall_pretty_print(analyzer_handle_t *analyzer, pid_t pid, long syscall, struct user_regs_struct regs);
 
 static void analyzer_run_executable(analyzer_handle_t *analyzer) {
     pid_t pid = fork();
@@ -158,7 +173,7 @@ static void analyzer_run_executable(analyzer_handle_t *analyzer) {
 
         long syscall = regs.orig_rax;
 
-        syscall_regs_to_string(analyzer, syscall, regs);
+        syscall_pretty_print(analyzer, pid, syscall, regs);
 
         if (ptrace(PTRACE_SYSCALL, pid, 0, 0) == -1)
             analyzer_fatal("Error: %s\n", strerror(errno));
@@ -176,16 +191,7 @@ static void analyzer_run_executable(analyzer_handle_t *analyzer) {
     }
 }
 
-int analyzer_perform(void *handle) {
-    analyzer_handle_t *analyzer = (analyzer_handle_t *)handle;
-
-    analyzer_ensure_buffers_are_set(analyzer);
-    analyzer_configure_buffer(analyzer);
-    analyzer_run_executable(analyzer);
-
-    return 0;
-}
-
+/* Translate syscall code to readable string. */
 static const char *syscall_to_string(long syscall) {
     static const char *syscall_map[] = {
         "read", "write", "open", "close", "stat", "fstat", "lstat", "poll", "lseek", "mmap", "mprotect", "munmap", "brk",
@@ -230,14 +236,94 @@ static const char *syscall_to_string(long syscall) {
     return syscall_map[syscall];
 }
 
-static void syscall_regs_to_string(analyzer_handle_t *analyzer, long syscall, struct user_regs_struct regs) {
+/* Read len bytes from address to buf. */
+static int remote_process_read(pid_t pid, void *address, char *buf, long buf_size)
+{
+    struct iovec local[1] = {};
+    struct iovec remote[1] = {};
+    long was_read;
+
+    local[0].iov_base = (void *)buf;
+    local[0].iov_len = buf_size;
+
+    remote[0].iov_base = address;
+    remote[0].iov_len = buf_size;
+
+    was_read = process_vm_readv(pid, local, 1, remote, 1, 0);
+
+    if (was_read < 0)
+        analyzer_fatal("Error: %s\n", strerror(errno));
+
+    return was_read;
+}
+
+static void remote_process_read_string(pid_t pid, void *address, char *buf, long buf_size) {
+    long was_read = remote_process_read(pid, address, buf, buf_size);
+    buf[was_read] = '\0';
+}
+
+static void remote_process_read_oflags(long parameter, char *buf) {
+    long oflags_written = 0;
+
+    if (!(parameter & O_RDONLY) /* O_RDONLY == 0*/)
+        oflags_written += sprintf(buf + oflags_written, "O_RDONLY|");
+
+    if (parameter & O_WRONLY)
+        oflags_written += sprintf(buf + oflags_written, "O_WRONLY|");
+
+    if (parameter & O_RDWR)
+        oflags_written += sprintf(buf + oflags_written, "O_RDWR|");
+
+    if (parameter & O_CREAT)
+        oflags_written += sprintf(buf + oflags_written, "O_CREAT|");
+
+    if (parameter & O_EXCL)
+        oflags_written += sprintf(buf + oflags_written, "O_EXCL|");
+
+    if (parameter & O_NOCTTY)
+        oflags_written += sprintf(buf + oflags_written, "O_NOCTTY|");
+
+    if (parameter & O_TRUNC)
+        oflags_written += sprintf(buf + oflags_written, "O_TRUNC|");
+
+    if (parameter & O_ASYNC)
+        oflags_written += sprintf(buf + oflags_written, "O_ASYNC|");
+
+    if (parameter & O_FSYNC)
+        oflags_written += sprintf(buf + oflags_written, "O_FSYNC|");
+
+    if (parameter & O_NONBLOCK)
+        oflags_written += sprintf(buf + oflags_written, "O_NONBLOCK|");
+
+    if (parameter & O_CLOEXEC)
+        oflags_written += sprintf(buf + oflags_written, "O_CLOEXEC|");
+
+    if (buf[oflags_written - 1] == '|')
+        buf[oflags_written - 1] = '\0';
+
+    buf[oflags_written] = '\0';
+}
+
+/* Append syscall with its parameters to handle buffer. */
+static void syscall_pretty_print(analyzer_handle_t *analyzer, pid_t pid, long syscall, struct user_regs_struct regs) {
     analyzer_write(analyzer, "%s(", syscall_to_string(syscall));
 
     switch (syscall) {
-//        case /*read*/0: {
-//            analyzer_write(analyzer, "%lld, %lld, %lld", regs.rdi, regs.rsi, regs.rdx);
-//            break;
-//        }
+        /// Here an example of syscall parameters resolving.
+        /// Other syscalls pretty prints can be done the same way.
+        case /*openat*/257: {
+            char filename[128];
+            char oflags[128];
+
+            remote_process_read_string(pid, /* char *buf */(void *)regs.rsi, filename, sizeof(filename));
+            remote_process_read_oflags(/* int flags */regs.rdx, oflags);
+
+            analyzer_write(analyzer,
+               "dfd = %lld, filename = %s, flags = %s",
+                regs.rdi, filename, oflags
+            );
+            break;
+        }
 
         default:
             analyzer_write(analyzer,
@@ -249,4 +335,14 @@ static void syscall_regs_to_string(analyzer_handle_t *analyzer, long syscall, st
     }
 
     analyzer_write(analyzer, ")");
+}
+
+int analyzer_perform(void *handle) {
+    analyzer_handle_t *analyzer = (analyzer_handle_t *)handle;
+
+    analyzer_ensure_buffers_are_set(analyzer);
+    analyzer_configure_buffer(analyzer);
+    analyzer_run_executable(analyzer);
+
+    return 0;
 }
