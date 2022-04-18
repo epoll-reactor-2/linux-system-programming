@@ -46,6 +46,18 @@ void analyzer_destroy(void *handle) {
     free(analyzer);
 }
 
+__attribute__((noreturn, format(printf, 1, 2)))
+static void analyzer_fatal(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+
+    fprintf(stderr, fmt, args);
+
+    va_end(args);
+
+    abort();
+}
+
 /* Setup analyzer option. Can be called multiple times.
    Analyzer holds only last passed parameter. */
 void analyzer_setopt(void *handle, analyzer_opt_t opt, void *param) {
@@ -100,6 +112,19 @@ static void analyzer_configure_buffer(analyzer_handle_t *analyzer) {
     analyzer->output_fd = fopen(analyzer->output_file_path, "w");
 }
 
+/* Run given executable and collect data about performed syscalls. */
+static void analyzer_inspect_executable(analyzer_handle_t *analyzer);
+
+int analyzer_perform(void *handle) {
+    analyzer_handle_t *analyzer = (analyzer_handle_t *)handle;
+
+    analyzer_ensure_buffers_are_set(analyzer);
+    analyzer_configure_buffer(analyzer);
+    analyzer_inspect_executable(analyzer);
+
+    return 0;
+}
+
 /* Write to specified in handle file or buffer. */
 __attribute__((format(printf, 2, 3)))
 static void analyzer_write(analyzer_handle_t *analyzer, const char *fmt, ...) {
@@ -120,74 +145,6 @@ static void analyzer_write(analyzer_handle_t *analyzer, const char *fmt, ...) {
             fprintf(stderr, "Buffer overflow.");
             abort();
         }
-    }
-}
-
-__attribute__((noreturn, format(printf, 1, 2)))
-static void analyzer_fatal(const char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-
-    fprintf(stderr, fmt, args);
-
-    va_end(args);
-
-    abort();
-}
-
-/* Translate syscall code to readable string. */
-static const char *syscall_to_string(long syscall);
-
-/* Append syscall with its parameters to handle buffer. */
-static void syscall_pretty_print(analyzer_handle_t *analyzer, pid_t pid, long syscall, struct user_regs_struct regs);
-
-static void analyzer_run_executable(analyzer_handle_t *analyzer) {
-    pid_t pid = fork();
-    switch (pid) {
-        case -1:
-            analyzer_fatal("Error: %s\n", strerror(errno));
-        case 0: {
-            ptrace(PTRACE_TRACEME, NULL, NULL, NULL);
-            char *cmd = analyzer->executable_path;
-            char *argv[2];
-            argv[0] = cmd;
-            argv[1] = NULL;
-            execvp(cmd, argv);
-            analyzer_fatal("Error: %s\n", strerror(errno));
-        }
-    }
-
-    waitpid(pid, 0, 0);
-    ptrace(PTRACE_SETOPTIONS, pid, 0, PTRACE_O_EXITKILL);
-
-    while (1) {
-        if (ptrace(PTRACE_SYSCALL, pid, 0, 0))
-            analyzer_fatal("Error: %s\n", strerror(errno));
-
-        if (waitpid(pid, 0, 0) == -1)
-            analyzer_fatal("Error: %s\n", strerror(errno));
-
-        struct user_regs_struct regs;
-        if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1)
-            analyzer_fatal("Error: %s\n", strerror(errno));
-
-        long syscall = regs.orig_rax;
-
-        syscall_pretty_print(analyzer, pid, syscall, regs);
-
-        if (ptrace(PTRACE_SYSCALL, pid, 0, 0) == -1)
-            analyzer_fatal("Error: %s\n", strerror(errno));
-
-        if (waitpid(pid, 0, 0) == -1)
-            analyzer_fatal("Error: %s\n", strerror(errno));
-
-        if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1) {
-            analyzer_write(analyzer, " = ?\n");
-            if (errno == ESRCH)
-                break;
-        }
-
-        analyzer_write(analyzer, " = %lld\n", regs.rax);
     }
 }
 
@@ -237,10 +194,9 @@ static const char *syscall_to_string(long syscall) {
 }
 
 /* Read len bytes from address to buf. */
-static int remote_process_read(pid_t pid, void *address, char *buf, long buf_size)
-{
-    struct iovec local[1] = {};
-    struct iovec remote[1] = {};
+static int remote_process_read_address(pid_t pid, void *address, char *buf, long buf_size) {
+    struct iovec local[1] = {0};
+    struct iovec remote[1] = {0};
     long was_read;
 
     local[0].iov_base = (void *)buf;
@@ -258,14 +214,14 @@ static int remote_process_read(pid_t pid, void *address, char *buf, long buf_siz
 }
 
 static void remote_process_read_string(pid_t pid, void *address, char *buf, long buf_size) {
-    long was_read = remote_process_read(pid, address, buf, buf_size);
+    long was_read = remote_process_read_address(pid, address, buf, buf_size);
     buf[was_read] = '\0';
 }
 
 static void remote_process_read_oflags(long parameter, char *buf) {
     long oflags_written = 0;
 
-    if (!(parameter & O_RDONLY) /* O_RDONLY == 0*/)
+    if (!(parameter & O_RDONLY) /* O_RDONLY == 0 */)
         oflags_written += sprintf(buf + oflags_written, "O_RDONLY|");
 
     if (parameter & O_WRONLY)
@@ -305,13 +261,13 @@ static void remote_process_read_oflags(long parameter, char *buf) {
 }
 
 /* Append syscall with its parameters to handle buffer. */
-static void syscall_pretty_print(analyzer_handle_t *analyzer, pid_t pid, long syscall, struct user_regs_struct regs) {
+static void syscall_format(analyzer_handle_t *analyzer, pid_t pid, long syscall, struct user_regs_struct regs) {
     analyzer_write(analyzer, "%s(", syscall_to_string(syscall));
 
     switch (syscall) {
-        /// Here an example of syscall parameters resolving.
-        /// Other syscalls pretty prints can be done the same way.
-        case /*openat*/257: {
+        // An example of syscall parameters resolving.
+        // Other syscalls pretty prints can be done the same way.
+        case /* openat */257: {
             char filename[128];
             char oflags[128];
 
@@ -319,7 +275,7 @@ static void syscall_pretty_print(analyzer_handle_t *analyzer, pid_t pid, long sy
             remote_process_read_oflags(/* int flags */regs.rdx, oflags);
 
             analyzer_write(analyzer,
-               "dfd = %lld, filename = %s, flags = %s",
+               "dfd = %lld, filename = \"%s\", flags = %s",
                 regs.rdi, filename, oflags
             );
             break;
@@ -337,12 +293,59 @@ static void syscall_pretty_print(analyzer_handle_t *analyzer, pid_t pid, long sy
     analyzer_write(analyzer, ")");
 }
 
-int analyzer_perform(void *handle) {
-    analyzer_handle_t *analyzer = (analyzer_handle_t *)handle;
+/* Run given executable and collect data about performed syscalls. */
+static void analyzer_inspect_executable(analyzer_handle_t *analyzer) {
+    pid_t pid = fork();
+    switch (pid) {
+        case -1:
+            analyzer_fatal("Error: %s\n", strerror(errno));
+        case 0: {
+            ptrace(PTRACE_TRACEME, NULL, NULL, NULL);
+            char *cmd = analyzer->executable_path;
+            char *argv[2];
+            argv[0] = cmd;
+            argv[1] = NULL;
+            execvp(cmd, argv);
+            analyzer_fatal("Error: %s\n", strerror(errno));
+        }
+    }
 
-    analyzer_ensure_buffers_are_set(analyzer);
-    analyzer_configure_buffer(analyzer);
-    analyzer_run_executable(analyzer);
+    waitpid(pid, 0, 0);
+    ptrace(PTRACE_SETOPTIONS, pid, 0, PTRACE_O_EXITKILL);
 
-    return 0;
+    while (1) {
+        // Run syscall and stop on exit.
+        if (ptrace(PTRACE_SYSCALL, pid, 0, 0))
+            analyzer_fatal("Error: %s\n", strerror(errno));
+
+        if (waitpid(pid, 0, 0) == -1)
+            analyzer_fatal("Error: %s\n", strerror(errno));
+
+        // Get syscall arguments, placed in registers.
+        struct user_regs_struct regs;
+        if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1)
+            analyzer_fatal("Error: %s\n", strerror(errno));
+
+        long syscall = regs.orig_rax;
+
+        syscall_format(analyzer, pid, syscall, regs);
+
+        // Run syscall and stop on exit.
+        if (ptrace(PTRACE_SYSCALL, pid, 0, 0) == -1)
+            analyzer_fatal("Error: %s\n", strerror(errno));
+
+        if (waitpid(pid, 0, 0) == -1)
+            analyzer_fatal("Error: %s\n", strerror(errno));
+
+        // Get syscall result.
+        if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1) {
+            analyzer_write(analyzer, " = ?\n");
+            // No process or process group can be found corresponding to that specified by pid.
+            if (errno == ESRCH)
+                break;
+        }
+
+        // Print syscall exit code.
+        analyzer_write(analyzer, " = %lld\n", regs.rax);
+    }
 }
