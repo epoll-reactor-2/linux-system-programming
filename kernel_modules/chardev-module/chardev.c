@@ -1,16 +1,15 @@
 /*
  * chardev.c - Creates a read-only char device that says how many
  * times you read from the dev file.
+ *
+ * NOTE: device file should be created manually with mknod and next
+ * simply deleted with rm. This is shown in usage.sh.
  */
-#include <linux/cdev.h>
-#include <linux/delay.h>
-#include <linux/device.h>
-#include <linux/fs.h>
-#include <linux/init.h>
-#include <linux/irq.h>
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/poll.h>
+#include <linux/device.h> // device_create()
+#include <linux/init.h>   // __init, __exit
+#include <linux/fs.h>     // file_operations, (un?)register_chrdev
+#include <linux/kernel.h> // pr_info()
+#include <linux/module.h> // module API
 
 MODULE_LICENSE("GPL");
 
@@ -20,7 +19,7 @@ static ssize_t device_read (struct file *,       char __user *, size_t, loff_t *
 static ssize_t device_write(struct file *, const char __user *, size_t, loff_t *);
 
 #define DEVICE_NAME "chardev" // Dev name as it apperas in /proc/devices.
-#define BUF_LEN     1         // Max length of the message from the device.
+#define BUF_LEN     8192      // Max length of the message from the device.
 
 static int major; // Major number assigned to device driver.
 
@@ -32,7 +31,7 @@ enum {
 // Is device open? Used to prevent multiple access to device.
 static atomic_t already_open = ATOMIC_INIT(CDEV_NOT_USED);
 
-static char msg[BUF_LEN]; // The message the device will give when asked.
+static char msg_buf[BUF_LEN]; // The message the device will give when asked.
 
 // High-level abstraction of device. Classes allow userspace to work with
 // devices based on what they do, rather than how they are connected or
@@ -77,21 +76,22 @@ static void __exit chardev_exit(void)
 	device_destroy(device, MKDEV(major, 0));
 	class_destroy(device);
 
-	unregister_chrdev(major, DEVICE_NAME); // Unregister our device.
+	// Unregister our device.
+	unregister_chrdev(major, DEVICE_NAME);
 
 	pr_info("Device deleted on /dev/%s\n", DEVICE_NAME);
 }
 
 // Called when a process tries to open the device file, like "sudo cat /dev/chardev".
-static int device_open(struct inode *inode, struct file *file)
+static int device_open(struct inode */* unused */, struct file */* unused */)
 {
 	static int counter = 0;
 
 	if (atomic_cmpxchg(&already_open, CDEV_NOT_USED, CDEV_EXCLUSIVE_OPEN))
 		return -EBUSY;
 
-	sprintf(msg, "/dev/%s was accessed %d times\n", DEVICE_NAME, counter++);
-	pr_info("%s", msg);
+	sprintf(msg_buf, "/dev/%s was accessed %d times\n", DEVICE_NAME, counter++);
+	pr_info("%s", msg_buf);
 	
 	try_module_get(THIS_MODULE);
 
@@ -99,7 +99,7 @@ static int device_open(struct inode *inode, struct file *file)
 }
 
 // Called when a process closes the device file.
-static int device_release(struct inode *inode, struct file *file)
+static int device_release(struct inode */* unused */, struct file */* unused */)
 {
 	// We're now ready for our next caller.
 	atomic_set(&already_open, CDEV_NOT_USED);
@@ -108,21 +108,21 @@ static int device_release(struct inode *inode, struct file *file)
 	// will get rid of the module.
 	module_put(THIS_MODULE);
 
-	pr_info("/dev/%s was released\n", DEVICE_NAME);
+	pr_info("/dev/%s was closed\n", DEVICE_NAME);
 
 	return 0;
 }
 
 // Called when a process, which already opened the dev file, attempts to read from it.
 static ssize_t device_read(
-	struct file *filp,
+	struct file */* unused */,
 	char __user *buffer,
 	size_t       length,
 	loff_t      *offset)
 {
 	// Number of bytes actually written to the buffer.
-	int bytes_read = 0;
-	const char *msg_ptr = msg;
+	size_t bytes_read = 0;
+	const char *msg_ptr = msg_buf;
 
 	if (!*(msg_ptr + *offset)) { // We are at the end of message.
 		*offset = 0; // Reset the offset.
@@ -150,10 +150,10 @@ static ssize_t device_read(
 
 // Called when a process writes to dev file: echo "Hi" > /dev/chardev.
 static ssize_t device_write(
-	struct file       *filp,
-	const char __user *buffer,
-	size_t             len,
-	loff_t            *off)
+	struct file       */* unused */,
+	const char __user */* unused */,
+	size_t             /* unused */,
+	loff_t            */* unused */)
 {
 	pr_alert("Sorry, write operation is not supported.\n");
 
@@ -162,3 +162,6 @@ static ssize_t device_write(
 
 module_init(chardev_init);
 module_exit(chardev_exit);
+
+#undef DEVICE_NAME
+#undef BUF_LEN
