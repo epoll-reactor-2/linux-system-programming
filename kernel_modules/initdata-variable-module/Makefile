@@ -1,4 +1,4 @@
-obj-m += initdata_variable_module.o
+obj-m += initdata-variable-module.o
 PWD   := $(CURDIR)
 
 all:

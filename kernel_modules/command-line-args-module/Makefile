@@ -1,4 +1,4 @@
-obj-m += command_line_args_module.o
+obj-m += command-line-args-module.o
 PWD   := $(CURDIR)
 
 all:

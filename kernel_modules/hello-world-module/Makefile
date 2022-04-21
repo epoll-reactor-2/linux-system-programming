@@ -1,4 +1,4 @@
-obj-m += hello_world_module.o
+obj-m += hello-world-module.o
 PWD   := $(CURDIR)
 
 all:

@@ -1,5 +1,5 @@
 /*
- * hello_world_module.c - The simplest kernel module.
+ * hello-world-module.c - The simplest kernel module.
  */
 #include <linux/kernel.h> /* Needed for pr_info(). */
 #include <linux/module.h> /* Needed by all modules. */

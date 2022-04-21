@@ -1,4 +1,4 @@
-obj-m += hello_world_module_with_exit_funcs.o
+obj-m += hello-world-module-with-exit-funcs.o
 PWD   := $(CURDIR)
 
 all:

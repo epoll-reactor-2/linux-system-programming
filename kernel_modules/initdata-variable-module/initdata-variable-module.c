@@ -1,5 +1,5 @@
 /*
- * initdata_variable_module.c - Illustrating the __init,
+ * initdata-variable-module.c - Illustrating the __init,
  * __initdata and __exit macros.
  */
 #include <linux/init.h>   /* Needed for the __init, __exit macros. */

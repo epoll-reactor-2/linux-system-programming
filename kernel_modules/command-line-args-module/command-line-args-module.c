@@ -1,5 +1,5 @@
 /*
- * command_line_args_module.c - Demonstrates command line argument passing to a module.
+ * command-line-args-module.c - Demonstrates command line argument passing to a module.
  */
 #include <linux/init.h>
 #include <linux/kernel.h>

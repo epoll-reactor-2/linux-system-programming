@@ -1,5 +1,5 @@
 /*
- * hello_world_module_with_exit_funcs.c - Demonstrating the module_init() and module_exit() macros.
+ * hello-world-module-with-exit-funcs.c - Demonstrating the module_init() and module_exit() macros.
  * This is preferred over using init_module() and cleanup_module().
  */
 #include <linux/init.h>   /* Needed for the macros. */
