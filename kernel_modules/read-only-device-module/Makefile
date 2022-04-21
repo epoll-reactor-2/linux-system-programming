@@ -1,4 +1,4 @@
-obj-m += chardev.o
+obj-m += read-only-device.o
 PWD   := $(CURDIR)
 
 all:
