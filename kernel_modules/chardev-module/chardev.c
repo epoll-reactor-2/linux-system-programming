@@ -155,7 +155,7 @@ static ssize_t device_write(
 	size_t             /* unused */,
 	loff_t            */* unused */)
 {
-	pr_alert("Sorry, write operation is not supported.\n");
+	pr_info("Sorry, write operation is not supported.\n");
 
 	return -EINVAL;
 }
