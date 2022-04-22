@@ -2,9 +2,9 @@
  * initdata-variable-module.c - Illustrating the __init,
  * __initdata and __exit macros.
  */
-#include <linux/init.h>   /* Needed for the __init, __exit macros. */
-#include <linux/kernel.h> /* Needed for pr_info() */
-#include <linux/module.h> /* Needed by all modules */
+#include <linux/init.h>   // __init, __exit
+#include <linux/kernel.h> // pr_info()
+#include <linux/module.h> // module API
 
 MODULE_LICENSE("GPL");
 

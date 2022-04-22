@@ -1,9 +1,9 @@
 /*
  * end.c - Illustration of multi-filed modules.
  */
-#include <linux/init.h>   /* __init macros. */
-#include <linux/kernel.h> /* We are doing kernel work */
-#include <linux/module.h> /* Specifically, a module */
+#include <linux/init.h>   // __init macros
+#include <linux/kernel.h> // pr_info()
+#include <linux/module.h> // module API
 
 MODULE_LICENSE("GPL");
 
