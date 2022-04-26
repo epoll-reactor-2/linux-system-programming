@@ -2,9 +2,9 @@
  * hello-world-module-with-exit-funcs.c - Demonstrating the module_init() and module_exit() macros.
  * This is preferred over using init_module() and cleanup_module().
  */
-#include <linux/init.h>   /* Needed for the macros. */
-#include <linux/kernel.h> /* Needed for pr_info(). */
-#include <linux/module.h> /* Needed by all modules. */
+#include <linux/init.h>   // __init, __exit
+#include <linux/kernel.h> // pr_info()
+#include <linux/module.h> // module API
 
 MODULE_LICENSE("GPL");
 

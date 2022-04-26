@@ -1,8 +1,8 @@
 /*
  * hello-world-module.c - The simplest kernel module.
  */
-#include <linux/kernel.h> /* Needed for pr_info(). */
-#include <linux/module.h> /* Needed by all modules. */
+#include <linux/kernel.h> // pr_info()
+#include <linux/module.h> // module API
 
 MODULE_LICENSE("GPL");
 
