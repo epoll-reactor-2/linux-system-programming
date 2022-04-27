@@ -16,16 +16,16 @@ static struct kobject *sysfs_object;
 static int sysfs_value = 0;
 
 static ssize_t sysfs_value_show(
-	struct kobject        *kobj,
-	struct kobj_attribute *attr,
+	struct kobject        * /* unused */,
+	struct kobj_attribute * /* unused */,
 	char                  *buf)
 {
 	return sprintf(buf, "%d\n", sysfs_value);
 }
 
 static ssize_t sysfs_value_store(
-	struct kobject        *kobj,
-	struct kobj_attribute *attr,
+	struct kobject        * /* unused */,
+	struct kobj_attribute * /* unused */,
 	char                  *buf,
 	size_t                 count)
 {
@@ -33,8 +33,15 @@ static ssize_t sysfs_value_store(
 	return count;
 }
 
-static struct kobj_attribute sysfs_value_attribute =
-	__ATTR(sysfs_value, 0660, sysfs_value_show, (void *)sysfs_value_store);
+// I prefer explicit initialization instead of vile __ATTR macros.
+static struct kobj_attribute sysfs_value_attribute = {
+	.attr  = {
+		.name = "sysfs_value",
+		.mode = 0660
+	},
+	.show  =         sysfs_value_show,
+	.store = (void *)sysfs_value_store
+};
 
 static int __init sysfs_module_init(void)
 {

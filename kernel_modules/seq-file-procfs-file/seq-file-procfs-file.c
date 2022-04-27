@@ -21,7 +21,7 @@ MODULE_LICENSE("GPL");
  * * the /proc file is read (first time);
  * * after the function stop (end of the sequence).
  */
-static void *module_seq_start(struct seq_file *seq, loff_t *offset)
+static void *module_seq_start(struct seq_file * /* unused */, loff_t *offset)
 {
 	static size_t counter = 0;
 
@@ -38,7 +38,7 @@ static void *module_seq_start(struct seq_file *seq, loff_t *offset)
 /* Called after the beginning of a sequence.
  * Called, until it returns NULL.
  */
-static void *module_seq_next(struct seq_file *seq, void *ptr, loff_t *offset)
+static void *module_seq_next(struct seq_file * /* unused */, void *ptr, loff_t *offset)
 {
 	(*(size_t *)ptr)++;
 	(*offset)++;
