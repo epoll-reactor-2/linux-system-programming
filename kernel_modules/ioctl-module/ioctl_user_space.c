@@ -24,6 +24,7 @@ int main()
 		switch (cmd) {
 		case 1:
 		case 2:
+			// Refer to kernel space.
 			int ret = ioctl(fd, 0xFFAA + cmd, 8);
 			if (ret < 0) {
 				perror("ioctl");

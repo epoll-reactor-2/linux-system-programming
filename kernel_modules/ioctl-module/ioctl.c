@@ -28,6 +28,7 @@ static int ioctl_device_release(struct inode * /* unused */, struct file * /* un
 	return 0;
 }
 
+// This executed when ioctl() called from userspace.
 static long ioctl_device_ioctl(
 	struct file  *file,
 	unsigned int  cmd,
@@ -54,6 +55,11 @@ const struct file_operations fops = {
 	.owner          = THIS_MODULE,
 	.open           = ioctl_device_open,
 	.release        = ioctl_device_release,
+	/*   compat_ioctl allows 32-bit userspace code to make ioctl calls on a 64-bit kernel.
+	 * unlocked_ioctl allows to do not lock the whole system on single ioctl call.
+	 * To check if these functions exists, related macros should be used
+	 * (HAVE_UNLOCKED_IOCTL and HAVE_COMPAT_IOCTL).
+	 */
 	.unlocked_ioctl = ioctl_device_ioctl
 };
 
