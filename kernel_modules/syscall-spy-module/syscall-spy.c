@@ -32,17 +32,17 @@
 # else
 #  include <linux/kallsyms.h> // kallsyms_lookup_name
 # endif
-#else
-#if defined (CONFIG_KPROBES)
-# define HAVE_KPROBES 1
-# include <linux/kprobes.h>
-#else
-# define HAVE_PARAM 1
-# include <linux/kallsyms.h> // sprint_symbol()
-  // The address of sys_call_table.
-  static unsigned long sym = 0;
-  module_param(sym, ulong, 0644);
-#endif // CONFIG_KPROBES
+#else // Version >= 5.7.0
+# if defined (CONFIG_KPROBES)
+#  define HAVE_KPROBES 1
+#  include <linux/kprobes.h>
+# else
+#  define HAVE_PARAM 1
+#  include <linux/kallsyms.h> // sprint_symbol()
+   // The address of sys_call_table.
+   static unsigned long sym = 0;
+   module_param(sym, ulong, 0644);
+# endif // CONFIG_KPROBES
 #endif // Version < 5.7.0
 
 static unsigned long **sys_call_table;
@@ -52,48 +52,60 @@ static int uid;
 module_param(uid, int, 0644);
 
 // A pointer to the original system call.
-static asmlinkage int (*original_call)(const char *, int, int);
+static asmlinkage int (*original_sys_open)(const char *, int, int);
 
 // The function we will replace sys_open.
 static asmlinkage int funny_sys_open(const char *filename, int flags, int mode)
 {
 	int i = 0;
 	char ch;
+	char buf[512];
+	size_t written;
 
-	pr_info("syscall_spy: Opened file by %d: ", uid);
+	written = sprintf(buf, "syscall_spy: Opened file by %d: ", uid);
+
 	do {
 		get_user(ch, (char __user *)filename + i);
+		written += sprintf(buf + written, "%c", ch);
 		++i;
-		pr_info("%c", ch);
 	} while (ch != '\0');
-	pr_info("\n");
-	return original_call(filename, flags, mode);
+
+	written += sprintf(buf + written, "\n");
+
+	buf[written] = '\0';
+	
+	pr_info("%s", buf);
+
+	return original_sys_open(filename, flags, mode);
 }
 
-static unsigned long **aquire_sys_call_table(void)
-{
 #ifdef HAVE_KSYS_CLOSE
+static unsigned long **acquire_sys_call_table_ksys(void)
+{
 	unsigned long int offset = PAGE_OFFSET;
-	unsigned long **sct;
+	unsigned long **table;
 
 	while (offset < ULONG_MAX) {
-		sct = (unsigned long **)offset;
+		table = (unsigned long **)offset;
 
-		if (sct[__NR_close] == (unsigned long *)ksys_close)
-			return sct;
+		if (table[__NR_close] == (unsigned long *)ksys_close)
+			return table;
 
 		offset += sizeof(void *);
 	}
 
 	return NULL;
-#endif
+}
+#endif // HAVE_KSYS_CLOSE
 
 #ifdef HAVE_PARAM
-	const char sct_name[] = "sys_call_table";
+static unsigned long **acquire_sys_call_table_sprint_symbol(void)
+{
+	const char table_name[] = "sys_call_table";
 	char symbol[40] = {0};
 
 	if (sym == 0) {
-		pr_alert("For Linux v5.7+, Kprobes is the preferable way to get "
+		pr_alert("syscall_spy: For Linux v5.7+, Kprobes is the preferable way to get "
 		         "symbol.\n");
          	pr_info("If Kprobes is absent, you have to specify the address of "
         	        "sys_call_table symbol.\n");
@@ -102,13 +114,16 @@ static unsigned long **aquire_sys_call_table(void)
 	        return NULL;
 	}
 	sprint_symbol(symbol, sym);
-	if (!strncmp(sct_name, symbol, sizeof(sct_name) - 1))
+	if (!strncmp(table_name, symbol, sizeof(table_name) - 1))
 		return (unsigned long **)sym;
 
 	return NULL;
-#endif
+}
+#endif // HAVE_PARAM
 
 #ifdef HAVE_KPROBES
+static unsigned long **acquire_sys_call_table_kprobe(void)
+{
 	unsigned long (*kallsyms_lookup_name)(const char *);
 	struct kprobe kp = {
 		.symbol_name = "kallsyms_lookup_name"
@@ -119,8 +134,21 @@ static unsigned long **aquire_sys_call_table(void)
 
 	kallsyms_lookup_name = (unsigned long (*)(const char *))kp.addr;
 	unregister_kprobe(&kp);
-#endif
 	return (unsigned long **)kallsyms_lookup_name("sys_call_table");
+}
+#endif
+
+static unsigned long **acquire_sys_call_table(void)
+{
+#ifdef HAVE_KSYS_CLOSE
+	return acquire_sys_call_table_ksys();
+#endif
+#ifdef HAVE_PARAM
+	return acquire_sys_call_table_sprint_symbol();
+#endif
+#ifdef HAVE_KPROBES
+	return acquire_sys_call_table_kprobe();
+#endif
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0)
@@ -148,20 +176,22 @@ static void disable_write_protection(void)
 
 static int __init spy_syscall_init(void)
 {
-	if (!(sys_call_table = aquire_sys_call_table()))
+	if (!(sys_call_table = acquire_sys_call_table())) {
+		pr_err("syscall_spy: failed to acquire syscall table.\n");
 		return -1;
+	}
 
 	disable_write_protection();
 
 	// Keep track of the original open function.
-	original_call = (void *)sys_call_table[__NR_open];
+	original_sys_open = (void *)sys_call_table[__NR_open];
 
 	// Use funny syscall.
 	sys_call_table[__NR_open] = (unsigned long *)funny_sys_open;
 
 	enable_write_protection();
 
-	pr_info("Spying on UID = %d.\n", uid);
+	pr_info("syscall_spy: spying on UID = %d.\n", uid);
 
 	return 0;
 }
@@ -172,13 +202,12 @@ static void __exit spy_syscall_exit(void)
 		return;
 
 	// Return the system call back to normal.
-	if (sys_call_table[__NR_open] != (unsigned long *)funny_sys_open) {
-		pr_alert("Somebody else also played with the open syscall\n"
+	if (sys_call_table[__NR_open] != (unsigned long *)funny_sys_open)
+		pr_alert("syscall_spy: somebody else also played with the open syscall, "
 		         "The system may be left in unstable state.\n");
-	}
 
 	disable_write_protection();
-	sys_call_table[__NR_open] = (unsigned long *)original_call;
+	sys_call_table[__NR_open] = (unsigned long *)original_sys_open;
 	enable_write_protection();
 
 	msleep(2000);

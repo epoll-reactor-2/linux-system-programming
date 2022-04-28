@@ -11,4 +11,4 @@ userspace:
 
 clean:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
-	rm -rf usage
+	rm -rf usage *.txt
