@@ -55,25 +55,28 @@ module_param(uid, int, 0644);
 static asmlinkage int (*original_sys_open)(const char *, int, int);
 
 // The function we will replace sys_open.
+// For some reason, __get_user give me trash instead of normal strings, while
+// int flags and int mode are completely normal.
 static asmlinkage int funny_sys_open(const char *filename, int flags, int mode)
 {
 	int i = 0;
 	char ch;
-	char buf[512];
+	char buf[256];
 	size_t written;
 
 	written = sprintf(buf, "syscall_spy: Opened file by %d: ", uid);
 
 	do {
-		get_user(ch, (char __user *)filename + i);
+		if (__get_user(ch, (char __user *)filename + i) != 0) {
+			pr_info("syscall_spy: get_user() failed.\n");
+			return -EFAULT;
+		}
 		written += sprintf(buf + written, "%c", ch);
 		++i;
 	} while (ch != '\0');
 
 	written += sprintf(buf + written, "\n");
-
 	buf[written] = '\0';
-	
 	pr_info("%s", buf);
 
 	return original_sys_open(filename, flags, mode);
@@ -204,7 +207,7 @@ static void __exit spy_syscall_exit(void)
 	// Return the system call back to normal.
 	if (sys_call_table[__NR_open] != (unsigned long *)funny_sys_open)
 		pr_alert("syscall_spy: somebody else also played with the open syscall, "
-		         "The system may be left in unstable state.\n");
+		         "the system may be left in unstable state.\n");
 
 	disable_write_protection();
 	sys_call_table[__NR_open] = (unsigned long *)original_sys_open;
