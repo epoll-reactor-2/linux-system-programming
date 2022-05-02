@@ -24,6 +24,8 @@ int main(int argc, char *argv[])
 	analyzer_perform(handle);
 	analyzer_destroy(handle);
 
+	puts("\n");
+	
 	FILE *fd = fopen(out_file, "r");
 	while ((bytes_read = fread(buf, 1, sizeof(buf), fd)) > 0) {
 		if (printf("%.*s", bytes_read, buf) != bytes_read) {

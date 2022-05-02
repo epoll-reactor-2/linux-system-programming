@@ -392,7 +392,6 @@ static void analyzer_inspect_executable(analyzer_handle_t *analyzer)
 		char  *arg  =  analyzer->argv[1];
 		char **args = &analyzer->argv[1];
 		execvp(arg, args);
-		analyzer_fatal("Error: %s\n", strerror(errno));
 	} else if (pid == -1) {
 		analyzer_fatal("Error: %s\n", strerror(errno));
 	}
