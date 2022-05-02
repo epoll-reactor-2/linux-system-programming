@@ -1,3 +1,7 @@
+/*
+ * syscall-analyzer.h - Library to be able see executed by program syscalls.
+ */
+
 #ifndef SYSCALL_ANALYZER_SYSCALL_ANALYZER_H
 #define SYSCALL_ANALYZER_SYSCALL_ANALYZER_H
 

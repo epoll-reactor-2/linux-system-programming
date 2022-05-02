@@ -1,6 +1,9 @@
+/*
+ * util.c - Syscall analyzer utility.
+ */
 #include <stdio.h>
 
-#include "syscall_analyzer.h"
+#include "syscall-analyzer.h"
 
 // Example program, that shows design of this utility.
 int main(int argc, char *argv[])

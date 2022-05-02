@@ -1,5 +1,5 @@
 /*
- * ioctl_user_space.c - Example usage of ioctl.
+ * ioctl-user-space.c - Example usage of ioctl.
  */
 #include <errno.h>
 #include <fcntl.h>

@@ -1,3 +1,6 @@
+/*
+ * syscall-analyzer.c - Library to be able see executed by program syscalls.
+ */
 #define _GNU_SOURCE
 
 #include <stdio.h>
@@ -14,7 +17,7 @@
 #include <sys/wait.h>
 #include <sys/uio.h>
 
-#include "syscall_analyzer.h"
+#include "syscall-analyzer.h"
 
 #define ARRAY_SIZE(x) (sizeof((x)) / sizeof((x)[0]))
 
