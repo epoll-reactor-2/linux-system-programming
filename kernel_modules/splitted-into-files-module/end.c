@@ -1,7 +1,7 @@
 /*
  * end.c - Illustration of multi-filed modules.
  */
-#include <linux/init.h>   // __init macros
+#include <linux/init.h>   // __exit
 #include <linux/kernel.h> // pr_info()
 #include <linux/module.h> // module API
 

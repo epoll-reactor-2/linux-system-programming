@@ -1,7 +1,5 @@
-
 /*
  * read-write-procfs-file.c - file in /proc that handles read and write operations.
- *
  * Example usage:
  *   $ sudo cat /proc/1k_buffer
  *   Hello, World

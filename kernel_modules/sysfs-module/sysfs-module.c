@@ -47,8 +47,6 @@ static int __init sysfs_module_init(void)
 {
 	int error = 0;
 
-	pr_info("sysfs_module: unitialized\n");
-
 	// Note: name "sysfs_object" causes error while creation.
 	sysfs_object = kobject_create_and_add("__sysfs_object", kernel_kobj);
 	if (!sysfs_object)
@@ -56,7 +54,7 @@ static int __init sysfs_module_init(void)
 
 	error = sysfs_create_file(sysfs_object, &sysfs_value_attribute.attr);
 	if (error)
-		pr_info("sysfs_module: failed to create /sys/sysfs_object\n");
+		pr_info("sysfs_module: failed to create /sys/__sysfs_object\n");
 
 	return error;
 }
