@@ -18,7 +18,7 @@ int main(int argc, char *argv[])
 	int bytes_read;
 	char *out_file = "/tmp/syscall_out_buf";
 
-	analyzer_setopt(handle, ANALYZER_OPT_ARGC, argc);
+	analyzer_setopt(handle, ANALYZER_OPT_ARGC, (void *) (long) argc);
 	analyzer_setopt(handle, ANALYZER_OPT_ARGV, argv);
 	analyzer_setopt(handle, ANALYZER_OPT_OUT_FILE, out_file);
 
