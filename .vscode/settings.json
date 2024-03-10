@@ -1,0 +1,15 @@
+{
+    "cmake.showOptionsMovedNotification": false,
+    "cmake.configureOnOpen": true,
+    "cmake.ctest.allowParallelJobs": true,
+    "cmake.ctestDefaultArgs": [
+        "test",
+        "--output-on-failure"
+    ],
+    "workbench.iconTheme": "icons",
+    "git.suggestSmartCommit": false,
+    "editor.cursorBlinking": "expand",
+    "explorer.compactFolders": false,
+    "editor.detectIndentation": false,
+    "editor.tabSize": 4
+}
