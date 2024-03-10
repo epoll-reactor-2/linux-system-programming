@@ -64,14 +64,9 @@ void analyzer_destroy(void *handle)
 }
 
 __attribute__((noreturn, format(printf, 1, 2)))
-static void analyzer_fatal(const char *fmt, ...)
+static void analyzer_fatal()
 {
-	va_list args;
-	va_start(args, fmt);
-
-	fprintf(stderr, fmt, args);
-
-	va_end(args);
+    printf("Error: %s\n", strerror(errno));
 
 	abort();
 }
@@ -252,7 +247,7 @@ static int remote_process_read_address(pid_t pid, void *address, char *buf, long
 	was_read = process_vm_readv(pid, local, 1, remote, 1, 0);
 
 	if (was_read < 0)
-		analyzer_fatal("Error: %s\n", strerror(errno));
+		analyzer_fatal();
 
 	return was_read;
 }
@@ -370,10 +365,10 @@ static void run_syscall(pid_t pid)
 {
 	// Run syscall and stop on exit.
 	if (ptrace(PTRACE_SYSCALL, pid, 0, 0) != 0)
-		analyzer_fatal("Error: %s\n", strerror(errno));
+		analyzer_fatal();
 
 	if (waitpid(pid, 0, 0) == -1)
-		analyzer_fatal("Error: %s\n", strerror(errno));
+		analyzer_fatal();
 }
 
 static struct user_regs_struct get_syscall_regs(pid_t pid)
@@ -381,7 +376,7 @@ static struct user_regs_struct get_syscall_regs(pid_t pid)
 	struct user_regs_struct regs;
 
 	if (ptrace(PTRACE_GETREGS, pid, 0, &regs) == -1)
-		analyzer_fatal("Error: %s\n", strerror(errno));
+		analyzer_fatal();
 
 	return regs;
 }
@@ -396,7 +391,7 @@ static void analyzer_inspect_executable(analyzer_handle_t *analyzer)
 		char **args = &analyzer->argv[1];
 		execvp(arg, args);
 	} else if (pid == -1) {
-		analyzer_fatal("Error: %s\n", strerror(errno));
+		analyzer_fatal();
 	}
 
 	waitpid(pid, 0, 0);
