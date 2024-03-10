@@ -5,8 +5,6 @@ all: ana
 
 SRC=$(shell find . -name '*.c')
 
-$(info SRC $(OBJ))
-
 ana:
 	$(CC) $(SRC) -o $(BIN)
 
