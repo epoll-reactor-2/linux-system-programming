@@ -298,7 +298,7 @@ static void remote_process_read_oflags(long parameter, char *buf)
 	if (buf[oflags_written - 1] == '|')
 		buf[oflags_written - 1] = '\0';
 	else
-	buf[oflags_written] = '\0';
+		buf[oflags_written] = '\0';
 }
 
 // A few examples of syscall parameters resolving with the help of
