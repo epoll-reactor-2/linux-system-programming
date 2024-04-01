@@ -13,9 +13,9 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	char buf[8192];
+	char  buf[8192];
 	void *handle = analyzer_init();
-	int bytes_read;
+	int   bytes_read;
 	char *out_file = "/tmp/syscall_out_buf";
 
 	analyzer_setopt(handle, ANALYZER_OPT_ARGC, (void *) (long) argc);
